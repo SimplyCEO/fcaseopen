@@ -1,3 +1,8 @@
+# Directories
+/.obj
+/bin
+
+# Files
 test.dSYM
 test
 .fseventsd
