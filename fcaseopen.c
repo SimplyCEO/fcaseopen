@@ -109,6 +109,7 @@
     { closedir(directory); }
 
   end:
+    free(dir_path);
     return ret;
   }
 #endif
@@ -128,7 +129,11 @@ fcaseopen(char const *path, char const *mode)
       switch (casepath(path, real_path))
       {
         case 0: break;
-        default: stream = fopen(real_path, mode); break;
+        default:
+        {
+          stream = fopen(real_path, mode);
+          free(real_path);
+        } break;
       }
     }
   #endif
@@ -145,7 +150,10 @@ casechdir(char const *path)
   #if !defined(_WIN32)
     char *real_path = (char*)malloc(sizeof(char)*(strlen(path)+3));
     if (casepath(path, real_path))
-    { chdir(real_path); }
+    {
+      chdir(real_path);
+      free(real_path);
+    }
     else
     { errno = ENOENT; }
   #else
