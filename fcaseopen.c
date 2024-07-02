@@ -1,115 +1,154 @@
 #include "fcaseopen.h"
 
 #if !defined(_WIN32)
-#include <stdlib.h>
-#include <string.h>
+  #include <stdbool.h>
+  #include <stdlib.h>
+  #include <string.h>
 
-#include <dirent.h>
-#include <errno.h>
-#include <unistd.h>
+  #include <dirent.h>
+  #include <errno.h>
+  #include <unistd.h>
 
-// r must have strlen(path) + 3 bytes
-static int casepath(char const *path, char *r)
-{
-    size_t l = strlen(path);
-    char *p = alloca(l + 1);
-    strcpy(p, path);
-    size_t rl = 0;
-    
-    DIR *d;
-    if (p[0] == '/')
+  /* real_path must have strlen(path) + 3 bytes */
+  static int
+  casepath(char const *path, char *real_path)
+  {
+    bool ret = false;
+
+    char *dir_path = (char*)malloc(sizeof(char)*(strlen(path)+1));
+    strcpy(dir_path, path);
+    size_t rp_length = 0;
+
+    /*
+     * If given path is found at root level, move towards it and drag the position 1 byte further.
+     * Otherwise, move to local directory and set real_path accordingly.
+     */  
+    DIR *directory;
+    switch (dir_path[0])
     {
-        d = opendir("/");
-        p = p + 1;
-    }
-    else
-    {
-        d = opendir(".");
-        r[0] = '.';
-        r[1] = 0;
-        rl = 1;
+      case '/':
+      {
+        directory = opendir("/");
+        dir_path = dir_path + 1;
+      }
+      default:
+      {
+        directory = opendir(".");
+        real_path[0] = '.';
+        real_path[1] = 0;
+        rp_length = 1;
+      } break;
     }
     
+    /* Get an array of tokens separated by the '/' character. */
     int last = 0;
-    char *c = strsep(&p, "/");
-    while (c)
+    char *token = strsep(&dir_path, "/");
+    while (token)
     {
-        if (!d)
+      /* If the directory of provided tokens do not exist, then exit function. */
+      if (!directory)
+      { goto end; }
+      
+      /* No file found will return an error. */
+      switch (last)
+      {
+        case 0: break;
+        default:
         {
-            return 0;
-        }
-        
-        if (last)
+          closedir(directory);
+          goto end;
+        } break;
+      }
+      
+      /* Add a separator between last token and the new one. */
+      real_path[rp_length] = '/';
+      rp_length += 1;
+      real_path[rp_length] = 0;
+      
+      /*
+       * List all entries from given directory path while it is valid.
+       * If the given entry is valid, the path will be copied to real_path.
+       * If invalid, it will read again.
+       */
+      struct dirent *entry = readdir(directory);
+      bool validation = false;
+      while (entry && !validation)
+      {
+        switch (strcasecmp(token, entry->d_name))
         {
-            closedir(d);
-            return 0;
-        }
-        
-        r[rl] = '/';
-        rl += 1;
-        r[rl] = 0;
-        
-        struct dirent *e = readdir(d);
-        while (e)
-        {
-            if (strcasecmp(c, e->d_name) == 0)
-            {
-                strcpy(r + rl, e->d_name);
-                rl += strlen(e->d_name);
+          case 0:
+          {
+            strcpy(real_path + rp_length, entry->d_name);
+            rp_length += strlen(entry->d_name);
 
-                closedir(d);
-                d = opendir(r);
-                
-                break;
-            }
-            
-            e = readdir(d);
+            closedir(directory);
+            directory = opendir(real_path);
+
+            validation = true;
+          } break;
+          default: entry = readdir(directory); break;
         }
-        
-        if (!e)
-        {
-            strcpy(r + rl, c);
-            rl += strlen(c);
-            last = 1;
-        }
-        
-        c = strsep(&p, "/");
+      }
+      
+      /* If no entry is found it means the directory does not contain any, therefore it will not reveal a file. */
+      if (!entry)
+      {
+        strcpy(real_path + rp_length, token);
+        rp_length += strlen(token);
+        last = 1;
+      }
+      
+      /* Again, get an array of tokens separated by the '/' character. */
+      token = strsep(&dir_path, "/");
     }
+
+    ret = 1;
     
-    if (d) closedir(d);
-    return 1;
-}
+    /* If directory is still loaded, close it. */
+    if (directory)
+    { closedir(directory); }
+
+  end:
+    return ret;
+  }
 #endif
 
-FILE *fcaseopen(char const *path, char const *mode)
+/*
+ * Windows: Read file from given path.
+ * Any other OS: Read file using case sensitivity filter on given path.
+ */
+FILE*
+fcaseopen(char const *path, char const *mode)
 {
-    FILE *f = fopen(path, mode);
-#if !defined(_WIN32)
-    if (!f)
+  FILE *stream = fopen(path, mode);
+  #if !defined(_WIN32)
+    if (!stream)
     {
-        char *r = alloca(strlen(path) + 3);
-        if (casepath(path, r))
-        {
-            f = fopen(r, mode);
-        }
+      char *real_path = (char*)malloc(sizeof(char)*(strlen(path)+3));
+      switch (casepath(path, real_path))
+      {
+        case 0: break;
+        default: stream = fopen(real_path, mode); break;
+      }
     }
-#endif
-    return f;
+  #endif
+  return stream;
 }
 
-void casechdir(char const *path)
+/*
+ * Windows: Change directory to given path.
+ * Any other OS: Change directory using case sensitivity filter on given path.
+ */
+void
+casechdir(char const *path)
 {
-#if !defined(_WIN32)
-    char *r = alloca(strlen(path) + 3);
-    if (casepath(path, r))
-    {
-        chdir(r);
-    }
+  #if !defined(_WIN32)
+    char *real_path = (char*)malloc(sizeof(char)*(strlen(path)+3));
+    if (casepath(path, real_path))
+    { chdir(real_path); }
     else
-    {
-        errno = ENOENT;
-    }
-#else
+    { errno = ENOENT; }
+  #else
     chdir(path);
-#endif
+  #endif
 }
