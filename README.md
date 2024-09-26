@@ -9,6 +9,7 @@ Provides
 
 To be used outside function:
 ```c
+const char* casepath(const char *path)
 FILE* fcaseopen(char const *path, char const *mode)
 void  casechdir(char const *path)
 ```

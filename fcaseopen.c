@@ -10,11 +10,10 @@
   #include <unistd.h>
 
   /* real_path must have strlen(path) + 3 bytes */
-  static int
-  casepath(char const *path, char *real_path)
+  const char*
+  casepath(char const *path)
   {
-    bool ret = false;
-
+    char *real_path = (char*)malloc(sizeof(char)*(strlen(path)+3));
     char *dir_path = (char*)malloc(sizeof(char)*(strlen(path)+1));
     strcpy(dir_path, path);
     size_t rp_length = 0;
@@ -101,8 +100,6 @@
       /* Again, get an array of tokens separated by the '/' character. */
       token = strsep(&dir_path, "/");
     }
-
-    ret = 1;
     
     /* If directory is still loaded, close it. */
     if (directory)
@@ -110,7 +107,7 @@
 
   end:
     free(dir_path);
-    return ret;
+    return real_path;
   }
 #endif
 
@@ -125,15 +122,11 @@ fcaseopen(char const *path, char const *mode)
   #if !defined(_WIN32)
     if (!stream)
     {
-      char *real_path = (char*)malloc(sizeof(char)*(strlen(path)+3));
-      switch (casepath(path, real_path))
+      char *real_path = (char*)casepath(path);
+      if (real_path)
       {
-        case 0: break;
-        default:
-        {
-          stream = fopen(real_path, mode);
-          free(real_path);
-        } break;
+        stream = fopen(real_path, mode);
+        free(real_path);
       }
     }
   #endif
@@ -148,8 +141,8 @@ void
 casechdir(char const *path)
 {
   #if !defined(_WIN32)
-    char *real_path = (char*)malloc(sizeof(char)*(strlen(path)+3));
-    if (casepath(path, real_path))
+    char *real_path = (char*)casepath(path);
+    if (real_path)
     {
       chdir(real_path);
       free(real_path);
@@ -160,3 +153,4 @@ casechdir(char const *path)
     chdir(path);
   #endif
 }
+

@@ -7,7 +7,8 @@
 extern "C" {
 #endif
 
-extern FILE *fcaseopen(char const *path, char const *mode);
+extern const char* casepath(char const *path);
+extern FILE* fcaseopen(char const *path, char const *mode);
 extern void casechdir(char const *path);
 
 #if defined(__cplusplus)
